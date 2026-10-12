@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>책 읽고 줄거리 요약하기 (A4 1장)</title>
+<style>
+  :root{
+    --ink:#25324a;
+    --navy:#2c4a6e;
+    --navy-deep:#1f3350;
+    --line:#aab4c2;
+    --paper:#fffdf8;
+    --sun:#f4a942;
+    --sun-soft:#fdeecb;
+    --sky-soft:#eaf1f8;
+  }
+
+  *{ box-sizing:border-box; }
+
+  html,body{
+    margin:0;
+    padding:0;
+    background:#dfe4ea;
+    font-family:"Pretendard","맑은 고딕","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    color:var(--ink);
+  }
+
+  /* ---------- toolbar (screen only) ---------- */
+
+  .toolbar{
+    position:fixed;
+    top:0; left:0; right:0;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:3mm 6mm;
+    background:var(--navy-deep);
+    color:#fff;
+    padding:3mm 6mm;
+    z-index:100;
+    box-shadow:0 2px 10px rgba(0,0,0,.25);
+  }
+  .toolbar .msg{ font-size:10.5pt; color:#cfe0f2; }
+  .toolbar button{
+    font-family:inherit;
+    font-size:11.5pt;
+    font-weight:700;
+    color:var(--navy-deep);
+    background:#fff;
+    border:none;
+    border-radius:3mm;
+    padding:2.6mm 6mm;
+    cursor:pointer;
+  }
+  .toolbar button:hover{ background:var(--sun-soft); }
+  .toolbar button:disabled{ opacity:.6; cursor:progress; }
+  .btn-group{ display:flex; gap:3mm; }
+
+  /* 그림 넣기 토글 스위치 */
+  .toggle{
+    display:flex;
+    align-items:center;
+    gap:3mm;
+    cursor:pointer;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .toggle input{
+    position:absolute;
+    opacity:0;
+    width:0; height:0;
+  }
+  .toggle .switch{
+    position:relative;
+    flex:0 0 auto;
+    width:17mm;
+    height:9mm;
+    border-radius:9mm;
+    background:#6b7a90;
+    transition:background .2s;
+  }
+  .toggle .switch:after{
+    content:"";
+    position:absolute;
+    top:1mm; left:1mm;
+    width:7mm; height:7mm;
+    border-radius:50%;
+    background:#fff;
+    transition:transform .2s;
+  }
+  .toggle input:checked + .switch{ background:var(--sun); }
+  .toggle input:checked + .switch:after{ transform:translateX(8mm); }
+  .toggle input:focus-visible + .switch{ outline:0.8mm solid #fff; outline-offset:0.8mm; }
+  .toggle .t-title{ font-size:12pt; font-weight:800; }
+  .toggle .t-state{
+    font-size:10.5pt;
+    color:#cfe0f2;
+    min-width:30mm;
+  }
+
+  .sheet-stack{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:30mm 0 20mm;
+  }
+
+  .page{
+    width:210mm;
+    height:297mm;
+    background:var(--paper);
+    box-shadow:0 6px 24px rgba(0,0,0,.22);
+    padding:11mm 14mm;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+  }
+
+  /* ---------- shared bits ---------- */
+
+  .section-head{
+    display:flex;
+    align-items:baseline;
+    background:var(--navy);
+    color:#fff;
+    border-radius:2mm;
+    padding:2.2mm 5mm;
+    margin:0 0 3mm;
+  }
+  .section-head h2{
+    margin:0;
+    font-size:12.5pt;
+    font-weight:800;
+    letter-spacing:.2mm;
+  }
+  .section-head span{
+    font-size:9pt;
+    color:#cfe0f2;
+    font-weight:500;
+    margin-left:3.5mm;
+  }
+
+  .ruled{
+    border:0.6mm solid var(--line);
+    border-radius:2.5mm;
+    background-image:repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 8.5mm,
+      var(--line) 8.5mm,
+      var(--line) 8.7mm
+    );
+    background-position:0 9.5mm;
+    padding:1.5mm 3mm;
+    font-size:11pt;
+    line-height:8.7mm;
+    color:var(--ink);
+    outline:none;
+  }
+  .ruled:empty:before{
+    content:attr(data-placeholder);
+    color:#b7bfcb;
+  }
+  .ruled:focus{ border-color:var(--navy); }
+
+  input.field{
+    font-family:inherit;
+    font-size:11pt;
+    color:var(--ink);
+    border:none;
+    border-bottom:0.5mm solid #9aa6b8;
+    background:transparent;
+    outline:none;
+    width:100%;
+    padding:0.8mm 1mm 1mm;
+    text-align:center;
+  }
+  input.field:focus{ border-bottom-color:var(--navy); }
+  input.field.left{ text-align:left; }
+
+  /* ---------- header ---------- */
+
+  .title-block{
+    text-align:center;
+    margin-bottom:3.5mm;
+  }
+  .title-block h1{
+    margin:0;
+    font-size:20pt;
+    font-weight:800;
+    color:var(--navy-deep);
+    letter-spacing:.3mm;
+  }
+  .title-block p{
+    margin:1.2mm 0 0;
+    font-size:9.5pt;
+    color:#6b7789;
+  }
+  .title-rule{
+    height:1mm;
+    background:var(--sun);
+    width:32mm;
+    margin:2.5mm auto 0;
+    border-radius:1mm;
+  }
+
+  /* ---------- info + book ---------- */
+
+  .info-bar{
+    display:flex;
+    border:0.6mm solid var(--navy);
+    border-radius:2.5mm;
+    overflow:hidden;
+    margin-bottom:3mm;
+  }
+  .info-cell{
+    flex:1 1 0;
+    border-right:0.4mm solid #c7d1de;
+    padding:1.6mm 2mm 2mm;
+    text-align:center;
+  }
+  .info-cell.wide{ flex:1.3 1 0; }
+  .info-cell:last-child{ border-right:none; }
+  .info-cell label{
+    display:block;
+    font-size:9.5pt;
+    font-weight:700;
+    color:var(--navy);
+    background:var(--sky-soft);
+    margin:-1.6mm -2mm 1.6mm;
+    padding:1.2mm 0;
+  }
+
+  .book-bar{
+    display:flex;
+    align-items:stretch;
+    border:0.6mm solid var(--line);
+    border-radius:2.5mm;
+    overflow:hidden;
+    margin-bottom:3.5mm;
+  }
+  .book-bar .label{
+    flex:0 0 26mm;
+    background:var(--sun-soft);
+    color:#8a5a10;
+    font-size:10.5pt;
+    font-weight:800;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .book-bar .field-wrap{
+    flex:1;
+    display:flex;
+    align-items:center;
+    padding:0 4mm;
+  }
+
+  /* ---------- characters (compact, fixed) ---------- */
+
+  .characters{
+    margin-bottom:4mm;
+  }
+  .characters .ruled{ height:16mm; }
+
+  /* ---------- story flow ---------- */
+
+  .flow-section{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    margin-bottom:4mm;
+    min-height:0;
+  }
+
+  .flow-row{
+    flex:1;
+    display:flex;
+    align-items:stretch;
+    min-height:0;
+  }
+  .flow-row + .flow-row{ margin-top:4mm; }
+  .flow-row .step{
+    flex:1;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    margin-right:4mm;
+  }
+  .flow-row .step:last-child{ margin-right:0; }
+  .flow-row .step-label{
+    text-align:center;
+    font-size:10.5pt;
+    font-weight:800;
+    color:var(--navy-deep);
+    margin-bottom:1.5mm;
+  }
+  .flow-row .step-box{
+    flex:1;
+    min-height:0;
+    overflow:hidden;
+    border:0.6mm solid var(--line);
+    border-radius:2.5mm;
+    background:#fff;
+    font-size:10.5pt;
+    line-height:1.5;
+    padding:2.5mm 3mm;
+    outline:none;
+    word-break:keep-all;
+    overflow-wrap:anywhere;
+  }
+  .flow-row .step-box:empty:before{
+    content:attr(data-placeholder);
+    color:#b7bfcb;
+  }
+  .flow-row .step-box:focus{ border-color:var(--navy); }
+  .flow-row .arrow{
+    flex:0 0 5mm;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-top:6.5mm;
+    margin-right:4mm;
+    font-size:14pt;
+    color:var(--sun);
+    font-weight:800;
+  }
+
+  /* ---------- 그림 칸 (토글 켰을 때만 보임) ---------- */
+
+  .img-slot{
+    display:none;
+    position:relative;
+    flex:0 0 29mm;
+    margin-bottom:1.6mm;
+    border:0.5mm dashed #8d9ab0;
+    border-radius:2.5mm;
+    background:var(--sky-soft);
+    overflow:hidden;
+    cursor:pointer;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    outline:none;
+  }
+  .with-images .img-slot{ display:flex; }
+  .img-slot:focus-visible{ border-color:var(--navy); border-style:solid; }
+  .img-slot .ph{
+    font-size:9pt;
+    font-weight:700;
+    color:#5b6c85;
+    line-height:1.35;
+    pointer-events:none;
+  }
+  .img-slot .ph b{
+    display:block;
+    font-size:17pt;
+    line-height:1.1;
+  }
+  .img-slot .img-view{
+    display:none;
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    background-repeat:no-repeat;
+    background-position:center;
+    background-size:cover;
+  }
+  .img-slot.has-img{ border-style:solid; border-color:var(--line); background:#fff; }
+  .img-slot.has-img .img-view{ display:block; }
+  .img-slot.has-img .ph{ display:none; }
+  .img-slot.dragover{ border-color:var(--sun); border-style:solid; background:var(--sun-soft); }
+
+  .img-del{
+    display:none;
+    position:absolute;
+    top:1.2mm; right:1.2mm;
+    width:7mm; height:7mm;
+    padding:0;
+    border:none;
+    border-radius:50%;
+    background:rgba(31,51,80,.85);
+    color:#fff;
+    font-size:10pt;
+    font-weight:800;
+    line-height:7mm;
+    text-align:center;
+    cursor:pointer;
+  }
+  .img-slot.has-img .img-del{ display:block; }
+
+  /* 그림 넣기 켜짐: 글칸을 조금 작게 */
+  .with-images .flow-row .step-box{
+    font-size:9.5pt;
+    line-height:1.45;
+    padding:2mm 2.5mm;
+  }
+
+  /* ---------- feelings ---------- */
+
+  .feelings{
+    flex:0 0 auto;
+  }
+  .double-line{
+    height:15mm;
+    display:flex;
+    flex-direction:column;
+    border:0.6mm solid var(--line);
+    border-radius:2.5mm;
+    overflow:hidden;
+    background:#fff;
+  }
+  .double-line .line-write{
+    flex:1;
+    display:flex;
+    align-items:center;
+    font-size:10.5pt;
+    line-height:1.3;
+    padding:0 4mm;
+    outline:none;
+  }
+  .double-line .line-write:first-child{
+    border-bottom:0.6mm solid var(--line);
+  }
+  .double-line .line-write:empty:before{
+    content:attr(data-placeholder);
+    color:#b7bfcb;
+  }
+  .double-line .line-write:focus{ background:var(--sky-soft); }
+
+  /* ---------- 저장하는 동안(파일에 찍힐 모습) ---------- */
+
+  .capturing .page{ height:296mm; box-shadow:none; }
+  .capturing .img-del{ display:none !important; }
+  .capturing .img-slot:not(.has-img){
+    border-style:solid;
+    border-color:var(--line);
+    background:#fff;
+  }
+  .capturing .img-slot:not(.has-img) .ph{ visibility:hidden; }
+  .capturing [data-placeholder]:empty:before{ content:""; }
+
+  /* ---------- 올리는 방법 안내 (화면 전용) ---------- */
+
+  .guide{
+    width:210mm;
+    margin-top:6mm;
+    background:#fff;
+    border:0.5mm solid var(--line);
+    border-radius:3mm;
+    padding:4mm 6mm;
+    font-size:10.5pt;
+    line-height:1.7;
+    color:var(--ink);
+  }
+  .guide h3{
+    margin:0 0 1mm;
+    font-size:11.5pt;
+    color:var(--navy-deep);
+  }
+  .guide p{ margin:0; }
+  .guide .tag{
+    display:inline-block;
+    min-width:30mm;
+    font-weight:800;
+    color:var(--navy);
+  }
+
+  @media print{
+    html,body{ background:#fff; }
+    .sheet-stack{ padding:0; }
+    .page{ box-shadow:none; margin:0; }
+    .toolbar, .guide{ display:none; }
+    .img-del{ display:none !important; }
+    @page{ size:A4; margin:0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <label class="toggle" for="imgToggle">
+    <span class="t-title">그림 넣기</span>
+    <input type="checkbox" id="imgToggle" role="switch">
+    <span class="switch"></span>
+    <span class="t-state" id="toggleState">꺼짐 · 글만 써요</span>
+  </label>
+  <div class="btn-group">
+    <button id="pdfBtn" type="button">📄 PDF로 저장</button>
+    <button id="pngBtn" type="button">🖼️ 이미지로 저장</button>
+  </div>
+</div>
+
+<div class="sheet-stack">
+  <div id="pdf-content">
+
+  <section class="page">
+
+    <div class="title-block">
+      <h1>책 읽고 줄거리 요약하기</h1>
+      <p>이야기의 흐름을 순서대로 자세히 정리해 보아요</p>
+      <div class="title-rule"></div>
+    </div>
+
+    <div class="info-bar">
+      <div class="info-cell"><label>학년</label><input class="field" type="text"></div>
+      <div class="info-cell"><label>반</label><input class="field" type="text"></div>
+      <div class="info-cell"><label>번호</label><input class="field" type="text"></div>
+      <div class="info-cell wide"><label>이름</label><input class="field" type="text" id="inName"></div>
+      <div class="info-cell wide"><label>날짜</label><input class="field" type="text"></div>
+    </div>
+
+    <div class="book-bar">
+      <div class="label">책 제목</div>
+      <div class="field-wrap"><input class="field left" type="text" id="inBook"></div>
+    </div>
+
+    <div class="characters">
+      <div class="section-head">
+        <h2>등장인물</h2>
+        <span>이야기에 나오는 인물들을 적어 보아요</span>
+      </div>
+      <div class="ruled" contenteditable="true" data-placeholder="여기에 등장인물을 적어 보세요"></div>
+    </div>
+
+    <div class="flow-section">
+      <div class="section-head">
+        <h2>이야기의 흐름</h2>
+        <span>화살표를 따라 순서대로 이어 보아요</span>
+      </div>
+
+      <div class="flow-row"></div>
+      <div class="flow-row"></div>
+    </div>
+
+    <div class="feelings">
+      <div class="section-head">
+        <h2>느낀 점 / 재미있었던 내용</h2>
+        <span>가장 기억에 남는 장면과 그 이유를 써 보아요</span>
+      </div>
+      <div class="double-line">
+        <div class="line-write" contenteditable="true" data-placeholder="여기에 느낀 점을 적어 보세요"></div>
+        <div class="line-write" contenteditable="true"></div>
+      </div>
+    </div>
+
+  </section>
+
+  </div>
+
+  <div class="guide">
+    <h3>패들렛에 올리는 방법</h3>
+    <p><span class="tag">글만 쓴 경우</span> 「PDF로 저장」 → 패들렛 ＋ → 파일 첨부(📎)로 올려요.</p>
+    <p><span class="tag">그림을 넣은 경우</span> 「이미지로 저장」 → 패들렛 ＋ → 사진/이미지로 올려요. (PDF도 괜찮아요)</p>
+  </div>
+</div>
+
+<input type="file" id="imgInput" accept="image/*" style="display:none">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+(function(){
+  /* ---------- 이야기의 흐름 8칸 만들기 ---------- */
+  var STEPS = ['처음','사건 1','사건 2','사건 3','사건 4','사건 5','사건 6','끝'];
+  var rows  = document.querySelectorAll('.flow-row');
+
+  STEPS.forEach(function(name, i){
+    var row = rows[i < 4 ? 0 : 1];
+
+    if (i % 4 !== 0){
+      var arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      arrow.textContent = '➜';
+      row.appendChild(arrow);
+    }
+
+    var step = document.createElement('div');
+    step.className = 'step';
+
+    var label = document.createElement('div');
+    label.className = 'step-label';
+    label.textContent = name;
+
+    var slot = document.createElement('div');
+    slot.className = 'img-slot';
+    slot.tabIndex = 0;
+    slot.setAttribute('role', 'button');
+    slot.setAttribute('aria-label', name + ' 그림 넣기');
+    slot.innerHTML =
+      '<div class="ph"><b>📷</b>그림 넣기</div>' +
+      '<div class="img-view"></div>' +
+      '<button type="button" class="img-del" aria-label="그림 지우기">✕</button>';
+
+    var box = document.createElement('div');
+    box.className = 'step-box';
+    box.setAttribute('contenteditable', 'true');
+    box.setAttribute('data-placeholder', '어떤 일이 있었나요?');
+
+    step.appendChild(label);
+    step.appendChild(slot);
+    step.appendChild(box);
+    row.appendChild(step);
+  });
+
+  /* ---------- 글칸: 붙여넣기는 글자만 ---------- */
+  document.addEventListener('paste', function(e){
+    var t = e.target;
+    if (t && t.isContentEditable){
+      e.preventDefault();
+      var text = (e.clipboardData || window.clipboardData).getData('text');
+      document.execCommand('insertText', false, text.replace(/\r?\n/g, ' '));
+    }
+  });
+
+  /* ---------- 그림 넣기 토글 ---------- */
+  var toggle = document.getElementById('imgToggle');
+  var state  = document.getElementById('toggleState');
+
+  function applyToggle(on){
+    document.body.classList.toggle('with-images', on);
+    state.textContent = on ? '켜짐 · 칸을 눌러 그림을 넣어요' : '꺼짐 · 글만 써요';
+  }
+  function hasAnyImage(){
+    return !!document.querySelector('.img-slot.has-img');
+  }
+
+  toggle.addEventListener('change', function(){
+    if (!toggle.checked && hasAnyImage()){
+      var ok = confirm('그림을 끄면 저장 파일에 그림이 나오지 않아요. 그래도 끌까요?\n(넣어 둔 그림은 지워지지 않아요.)');
+      if (!ok){ toggle.checked = true; return; }
+    }
+    applyToggle(toggle.checked);
+  });
+  applyToggle(false);
+
+  /* ---------- 그림 넣기 / 바꾸기 / 지우기 ---------- */
+  var fileInput = document.getElementById('imgInput');
+  var currentSlot = null;
+  var MAX_SIDE = 800;
+
+  function setSlotImage(slot, dataUrl){
+    var view = slot.querySelector('.img-view');
+    view.style.backgroundImage = 'url("' + dataUrl + '")';
+    slot.classList.add('has-img');
+  }
+  function clearSlot(slot){
+    slot.querySelector('.img-view').style.backgroundImage = '';
+    slot.classList.remove('has-img');
+  }
+
+  function handleFile(file, slot){
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0){
+      alert('그림 파일만 넣을 수 있어요.');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onerror = function(){ alert('그림을 불러오지 못했어요. 다른 그림으로 다시 해 보세요.'); };
+    reader.onload = function(){
+      var img = new Image();
+      img.onerror = function(){ alert('이 그림은 열 수 없어요. 다른 그림으로 다시 해 보세요.'); };
+      img.onload = function(){
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var scale = Math.min(1, MAX_SIDE / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale));
+        var ch = Math.max(1, Math.round(h * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(img, 0, 0, cw, ch);
+        setSlotImage(slot, canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function openPicker(slot){
+    currentSlot = slot;
+    fileInput.value = '';
+    fileInput.click();
+  }
+
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files && fileInput.files[0];
+    if (f && currentSlot) handleFile(f, currentSlot);
+  });
+
+  document.querySelectorAll('.img-slot').forEach(function(slot){
+    slot.addEventListener('click', function(e){
+      if (e.target.classList.contains('img-del')){
+        e.stopPropagation();
+        clearSlot(slot);
+        return;
+      }
+      openPicker(slot);
+    });
+    slot.addEventListener('keydown', function(e){
+      if (e.target !== slot) return;
+      if (e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        openPicker(slot);
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && slot.classList.contains('has-img')){
+        e.preventDefault();
+        clearSlot(slot);
+      }
+    });
+    slot.addEventListener('dragover', function(e){
+      e.preventDefault();
+      slot.classList.add('dragover');
+    });
+    slot.addEventListener('dragleave', function(){
+      slot.classList.remove('dragover');
+    });
+    slot.addEventListener('drop', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      slot.classList.remove('dragover');
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      handleFile(f, slot);
+    });
+  });
+
+  /* 그림 칸 밖에 떨어뜨려도 화면이 넘어가지 않게 */
+  window.addEventListener('dragover', function(e){ e.preventDefault(); });
+  window.addEventListener('drop', function(e){ e.preventDefault(); });
+
+  /* ---------- 저장하기 (PDF / 이미지) ---------- */
+  var pdfBtn = document.getElementById('pdfBtn');
+  var pngBtn = document.getElementById('pngBtn');
+  var pdfText = pdfBtn.textContent;
+  var pngText = pngBtn.textContent;
+  var target  = document.getElementById('pdf-content');
+
+  function fileBase(){
+    var name = document.getElementById('inName').value;
+    var book = document.getElementById('inBook').value;
+    function clean(s){ return s.replace(/[\\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim(); }
+    var parts = ['독후감'];
+    if (clean(name)) parts.push(clean(name));
+    if (clean(book)) parts.push(clean(book));
+    return parts.join('_');
+  }
+
+  function confirmBeforeSave(){
+    var name = document.getElementById('inName').value.trim();
+    var book = document.getElementById('inBook').value.trim();
+    if (!name || !book){
+      return confirm('이름과 책 제목을 적었나요? 그래도 저장할까요?');
+    }
+    return true;
+  }
+
+  function startCapture(which){
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    /* 입력칸에 쓴 글이 저장 파일에 나오도록 */
+    document.querySelectorAll('input.field').forEach(function(inp){
+      inp.setAttribute('value', inp.value);
+    });
+    document.body.classList.add('capturing');
+    pdfBtn.disabled = true;
+    pngBtn.disabled = true;
+    (which === 'pdf' ? pdfBtn : pngBtn).textContent = '만드는 중...';
+  }
+  function endCapture(){
+    document.body.classList.remove('capturing');
+    pdfBtn.disabled = false;
+    pngBtn.disabled = false;
+    pdfBtn.textContent = pdfText;
+    pngBtn.textContent = pngText;
+  }
+  function fail(err){
+    console.error(err);
+    alert('저장하는 중 문제가 생겼어요. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+    endCapture();
+  }
+
+  var baseOpt = {
+    margin: 0,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollX: 0, scrollY: 0 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'legacy'] }
+  };
+
+  pdfBtn.addEventListener('click', function(){
+    if (!confirmBeforeSave()) return;
+    startCapture('pdf');
+    var opt = Object.assign({}, baseOpt, { filename: fileBase() + '.pdf' });
+    try{
+      html2pdf().set(opt).from(target).save().then(endCapture).catch(fail);
+    }catch(err){ fail(err); }
+  });
+
+  pngBtn.addEventListener('click', function(){
+    if (!confirmBeforeSave()) return;
+    startCapture('png');
+    var filename = fileBase() + '.png';
+    try{
+      html2pdf().set(baseOpt).from(target).toCanvas().get('canvas').then(function(canvas){
+        canvas.toBlob(function(blob){
+          if (!blob){ fail(new Error('toBlob failed')); return; }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+          endCapture();
+        }, 'image/png');
+      }).catch(fail);
+    }catch(err){ fail(err); }
+  });
+})();
+</script>
+
+</body>
+</html>
